@@ -1,6 +1,7 @@
 /*
 	Object:		Raster-scan and label-equivalence-based algorithm.
 	Authors:	Massimo Nicolazzo & Giuliano Langella
+	email:		gyuliano@libero.it
 */
 
 #include <stdio.h>
