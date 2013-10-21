@@ -86,6 +86,8 @@ s_1
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <errno.h>        /* errno */
+#include <string.h>       /* strerror */
 
 // I: "urban" 	--> [0,0] shifted
 // O: "lab_mat" --> [1,1] shifted
@@ -110,6 +112,8 @@ s_1
 // MIN & MAX
 #define max(val1,val2)		(val1)>(val2)?(val1):(val2)
 #define min(val1,val2)		(val1)<(val2)?(val1):(val2)
+
+extern int		errno;
 
 unsigned char 	Vb			= 0;	// background value
 unsigned char 	Vo			= 1;	// object value
@@ -218,12 +222,12 @@ unsigned int first_scan(	unsigned char	*urban,
 	return maxcount;
 }
 
-record_equivalence(unsigned int val1, unsigned int val2, unsigned int *PARENT)
+void record_equivalence(unsigned int val1, unsigned int val2, unsigned int *PARENT)
 {
 	if(val1!=val2) PARENT[max(val1,val2)] = min(val1,val2);
 }
 
-union_equivalence(unsigned int maxcount, unsigned int *PARENT)
+void union_equivalence(unsigned int maxcount, unsigned int *PARENT)
 {
 	unsigned int j,k;
 	for(j=1;j<=maxcount;j++)
@@ -235,13 +239,18 @@ union_equivalence(unsigned int maxcount, unsigned int *PARENT)
 	}
 }
 
-relabel_equivalence(unsigned int maxcount, unsigned int *PARENT)
+void relabel_equivalence(unsigned int maxcount, unsigned int *PARENT)
 {
+	/*
+	 * 		Assign to PARENT[j] j itself only if it is ROOT id.
+	 * 		This is useful during the second_scan because we avoid
+	 * 		an if statement.
+	 */
 	unsigned int j;
 	for(j=1;j<=maxcount;j++) if(PARENT[j]==0) PARENT[j] = j;
 }
 
-second_scan(	
+void second_scan(
 		unsigned int	*lab_mat,
 		unsigned int	nrows,
 		unsigned int	ncols,
@@ -281,29 +290,38 @@ void read_mat(unsigned char *urban, unsigned int nrows, unsigned int ncols, char
 	fclose(fid);
 }
 
-// to be developed [MAYBE]:
+/*
+ * 		to be developed:
+ */
 void record_cross_equivalence()
 {
-	/* Record in cross_parent in the first rows the root equivalence for the first
-	 * tile (i.e. tile[0] ) of the grid of tiles. That is I have to write the following two times:
-	 * 		{ parent tile number, parent ID of parent tile number }
-	 * having:
-	 * 		{ parent tile number, parent ID of parent tile number, parent tile number, parent ID of parent tile number }
-	 * which is able to give the ROOT to the union_cross_equivalence function.
+	/*
+	 * For every tile, record equivalences in cross_parent in following order:
+	 *
+	 *	(1) nn [only if existent] 	---> objects_stitching_nn
+	 *	(2) ww [only if existent]	---> objects_stitching_ww
+	 *	(3) cc [always  existent]	---> objects_stitching_cc
+	 *
+	 * Point (3) records non-crossing objects and then it can build the complete and continuous
+	 * (i.e. without jumping) set of labels for the whole image.
+	 *
 	 */
 
 	// here I must call the objects_stintching_XX functions!
-	// first:
-	//objects_stitching_nn
-	// second:
-	//objects_stitching_ww
-	// third [maybe not useful]:
-	//objects_stitching_nw
+	// (1)
+	//		objects_stitching_nn()
+
+	// (2)
+	//		objects_stitching_ww()
+
+	// (3)
+	//		objects_stitching_cc()
+
 }
 
 void objects_stitching_ww(
-		unsigned int *lm_ww,		//label matrix of western tile in the mask
-		unsigned int *lm_cc,		//label matrix of target (=centre) tile in the mask
+		unsigned int *lm_ww,		// label matrix of western tile in the mask
+		unsigned int *lm_cc,		// label matrix of target (=centre) tile in the mask
 		unsigned int nr,			// number of rows
 		unsigned int nc,			// number of columns
 		unsigned int ntile_ww,		// number of ww tile in the grid of tiles
@@ -325,10 +343,9 @@ void objects_stitching_ww(
 		}
 	}
 }
-
 void objects_stitching_nn(
-		unsigned int *lm_nn,		//label matrix of northern tile in the mask
-		unsigned int *lm_cc,		//label matrix of target (=centre) tile in the mask
+		unsigned int *lm_nn,		// label matrix of northern tile in the mask
+		unsigned int *lm_cc,		// label matrix of target (=centre) tile in the mask
 		unsigned int nr,			// number of rows
 		unsigned int nc,			// number of columns
 		unsigned int ntile_nn,		// number of nn tile in the grid of tiles
@@ -350,10 +367,9 @@ void objects_stitching_nn(
 		}
 	}
 }
-
 void objects_stitching_nw(
-		unsigned int *lm_nw,		//label matrix of north-western tile in the mask
-		unsigned int *lm_cc,		//label matrix of target (=centre) tile in the mask
+		unsigned int *lm_nw,		// label matrix of north-western tile in the mask
+		unsigned int *lm_cc,		// label matrix of target (=centre) tile in the mask
 		unsigned int nr,			// number of rows
 		unsigned int nc,			// number of columns
 		unsigned int ntile_nw,		// number of nw tile in the grid of tiles
@@ -371,6 +387,34 @@ void objects_stitching_nw(
 		first_empty +=1;
 	}
 }
+void objects_stitching_cc(
+		unsigned int *lm_cc,		//label matrix of target (=centre) tile in the mask
+		unsigned int nr,			// number of rows
+		unsigned int nc,			// number of columns
+		unsigned int ntile_cc,		// number of cc tile in the grid of tiles
+		unsigned int *cross_parent,	// pointer to the first row in cross_parent
+		unsigned int *first_empty,	// the first empty row in cross_parent SCALAR
+		unsigned int *PARENT,		// the PARENT vector of target tile within tiles-mask
+		unsigned int maxcount		// number of labels in target tile stored in PARENT
+						)
+{
+	unsigned int i,j;
+	unsigned char found=0;
+	for(i=1;i<maxcount;i++) // start from 1, because 0 is background
+	{
+		found = 0;
+		for(j=0;j<first_empty;j++) if( (cross_parent[j*cross_cols+0]==ntile_cc) && (cross_parent[j*cross_cols+1]==PARENT[i]) ) found = 1; break;
+
+		if (found==0) // then record current label as ROOT label! (i.e. elements {1,2} are equal to elements {3,4} of cross_parent
+		{
+			cross_parent[&first_empty*cross_cols+0]	= ntile_cc;		// parent tile number
+			cross_parent[&first_empty*cross_cols+1]	= PARENT[i];	// parent ID of parent tile number
+			cross_parent[&first_empty*cross_cols+2]	= ntile_cc;		// root tile number
+			cross_parent[&first_empty*cross_cols+3]	= PARENT[i];	// root ID of root tile number
+			first_empty +=1;
+		}
+	}
+}
 
 void union_cross_equivalence(unsigned int first_empty, unsigned int *cross_parent)
 {
@@ -380,11 +424,35 @@ void union_cross_equivalence(unsigned int first_empty, unsigned int *cross_paren
 	{
 		j = 0;
 		// DO (j=j+1) Until (I will find the (first occurrence of) ROOT cross equivalence row recorded in cross_parent):
-		while( (cross_parent[j*cross_cols+0]!=cross_parent[i*cross_cols+2]) && (cross_parent[j*cross_cols+1]!=cross_parent[i*cross_cols+3]) && j<i) j+=1;
-		if(j==i) // the while loop should return j=i if any previous ROOT was found!
+		while( (cross_parent[j*cross_cols+0]!=cross_parent[i*cross_cols+2]) && (cross_parent[j*cross_cols+1]!=cross_parent[i*cross_cols+3]) && j<=i) j+=1;
+		/*
+		 *	The while loop returns j=i if any previous ROOT was found!
+		 *	Hence if j<i I have to update equivalence changing current label with ROOT label.
+		 */
+		if(j<i)
 		{
-			cross_parent[i*cross_cols+2] = cross_parent[j*cross_cols+0];
-			cross_parent[i*cross_cols+3] = cross_parent[j*cross_cols+1];
+			cross_parent[i*cross_cols+2] = cross_parent[j*cross_cols+2];
+			cross_parent[i*cross_cols+3] = cross_parent[j*cross_cols+3];
+		}
+	}
+}
+
+void relabel_cross_equivalence(unsigned int first_empty, unsigned int *cross_parent)
+{
+	unsigned int *final_parent;
+	final_parent = (unsigned int*)calloc(first_empty,sizeof(unsigned int));
+	unsigned int i,j,final_count=0;
+	// I have to check whether one for loop suffices to solve the whole ROOT tree
+	for(i=0;i<first_empty;first_empty++)
+	{
+		if( (cross_parent[i*cross_cols+0]==cross_parent[i*cross_cols+2]) && (cross_parent[i*cross_cols+1]==cross_parent[i*cross_cols+3]) ) final_parent[i] = final_count++;
+		else
+		{
+			j = 0;
+			// DO (j=j+1) Until (I will find the (first occurrence of) ROOT cross equivalence row recorded in cross_parent):
+			while( (cross_parent[j*cross_cols+0]!=cross_parent[i*cross_cols+2]) && (cross_parent[j*cross_cols+1]!=cross_parent[i*cross_cols+3]) && j<=i) j+=1;
+			if(j<i) final_parent[i] = final_parent[j];
+			else puts("Error in cross_parent!\nCheck one of {union_cross_equivalence, record_cross_equivalence}"); puts(strerror(errno));
 		}
 	}
 }
