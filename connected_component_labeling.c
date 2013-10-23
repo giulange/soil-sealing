@@ -5,83 +5,8 @@
 */
 
 /*
-|------------------------------------|
-|                  |                 |
-|        I        2|1     II         |      20001=10002         I  II III IV
-|      10000      0|0   20000        |      20001=10004		1   1   1   0  1
-|                 4|1                |      30002=10004     2   2   1   0  2
-|                 4|                 |                      3   1   1
-|------------------------------------|                      4   4   1
-|                 2|                 |					 2500	0
-|                  |                 |
-|       III        |      IV         |
-|                  |                 |
-|                  |                 |
-|------------------------------------|
-
 how many rows: (ntiles * 2 + ntilesX + ntilesY) *  ((tiledimX+tiledimY)/2)
-
 */
-
-
-/*
- *
---------------+
-0 1 2 3 4 5  6 |7 8 9 10   11| 12 13 14 15
-            |----------------|
-
-
-0 0 0 0 1 0  0 0 0 0 1
-1 1 0 0 1 1  1 1 0 0 1
-1 0 1 0 0 1  1 0 1 0 0
-0 0 0 0 1 0  0 0 0 0 1
-0 0 0 0 0 0  0 0 0 0 0
-0 0 0 0 1 0
-
-
-s_1
-0 0 0 0 1 0  0 0 0 0 1		if(1) --> equiv(t1,t2)
-2 2 0 0 1 1  2 2 0 0 1
-2 0 2 0 0 1  2 0 2 0 0
-0 0 0 0 1 0  0 0 0 0 3
-0 0 0 0 0 0  0 0 0 0 0
-
-
-mc1=2, mc2=2 => 6 x 2
-
-  t1 t2   t1*mc2+t2
-0  0  0      0
-1  0  1      1
-2  1  0      2
-4  1  1      3
-
-
-
-s_1-nt
-0 0 0 0 1 0  0 0 0 0 1		if(1) --> equiv(t1,t2)
-2 2 0 0 1 1  2 2 0 0 1
-2 0 2 0 0 0  0 2 2 0 0
-0 0 0 0 3 3  2 0 0 0 3
-0 0 0 0 0 0  0 0 0 0 0
-
-s_2
- 0  0  0  0 x1    0  0  0 0 y1
-x2 x2  0  0 x1   x1 x1  0 0 y1
-x2  0 x2  0  0   x1  0 x1 0  0
- 0  0  0  0 x1    0  0  0 0 y3
- 0  0  0  0  0    0  0  0 0  0
-
-s_3
-s_1
-0 0 0 0 1  0 0 0 0 3
-2 2 0 0 1  1 1 0 0 3
-2 0 2 0 0  1 0 1 0 0
-0 0 0 0 1  0 0 0 0 4
-0 0 0 0 0  0 0 0 0 0
-
-
- *
- */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -102,86 +27,55 @@ s_1
 		> xx are skipped pixels.
 	Therefore the mask has 4 active pixels with(out) object pixels (that is foreground pixels).
 */
-#define durban(c,r)		urban[		(c)		+	(r)		*ncols		] // I: scan value at current [r,c] 
-#define nw_pol(c,r)		lab_mat[	(c)		+	(r)		*(ncols+1)	] // O: scan value at North-West
-#define nn_pol(c,r)		lab_mat[	(c+1)	+	(r)		*(ncols+1)	] // O: scan value at North
-#define ne_pol(c,r)		lab_mat[	(c+2)	+	(r)		*(ncols+1)	] // O: scan value at North-East
-#define ww_pol(c,r)		lab_mat[	(c)		+	(r+1)	*(ncols+1)	] // O: scan value at West
-#define cc_pol(c,r)		lab_mat[	(c+1)	+	(r+1)	*(ncols+1)	] // O: scan value at current [r,c] which is shifted by [1,1] in O
-
+#define durban(c,r)		urban[		(c)	+	(r)	*ncols		] // I: scan value at current [r,c] 
+#define nw_pol(c,r)		lab_mat[	(c-1)	+	(r-1)	*(ncols)	] // O: scan value at North-West
+#define nn_pol(c,r)		lab_mat[	(c+0)	+	(r+0)	*(ncols)	] // O: scan value at North
+#define ne_pol(c,r)		lab_mat[	(c+1)	+	(r-1)	*(ncols)	] // O: scan value at North-East
+#define ww_pol(c,r)		lab_mat[	(c-1)	+	(r+0)	*(ncols)	] // O: scan value at West
+#define cc_pol(c,r)		lab_mat[	(c+0)	+	(r+0)	*(ncols)	] // O: scan value at current [r,c] which is shifted by [1,1] in O
 // MIN & MAX
 #define max(val1,val2)		(val1)>(val2)?(val1):(val2)
 #define min(val1,val2)		(val1)<(val2)?(val1):(val2)
 
-extern int		errno;
-
+extern int	errno;
 unsigned char 	Vb			= 0;	// background value
 unsigned char 	Vo			= 1;	// object value
 unsigned int	cross_cols	= 4;	// number of columns of the cross_parent matrix
 
-//----------------------------
+//---------------------------- FUNCTIONS PROTOTYPES
+// 	FIRST STAGE
+unsigned int first_scan( unsigned char *urban, unsigned int nrows, unsigned int ncols,unsigned int *lab_mat,unsigned int *count,unsigned int *PARENT);
+void record_equivalence(unsigned int val1, unsigned int val2, unsigned int *PARENT);
+void union_equivalence(unsigned int maxcount, unsigned int *PARENT);
+void relabel_equivalence(unsigned int maxcount, unsigned int *PARENT);
+void second_scan( unsigned int *lab_mat,unsigned int nrows,unsigned int ncols,unsigned int *PARENT );
+void print_mat(unsigned char *u,unsigned int nrows,unsigned int ncols, char *Label);
+void print_vec( unsigned int *vec, unsigned int numel, unsigned char *Label );
+void read_mat(unsigned char *urban, unsigned int nrows, unsigned int ncols, char *filename);
 
-/*[]={
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-0,0,0,1,1,1,0,0,0,1,1,1,0,0,0,
-0,0,0,1,1,1,0,0,0,0,0,1,1,0,0,
-0,0,0,0,1,0,0,0,0,0,1,0,0,1,0,
-1,1,0,0,1,0,0,0,0,0,1,0,1,0,0,
-1,1,0,0,1,0,0,0,0,0,0,0,0,0,0,
-0,1,1,1,0,0,0,0,0,0,1,1,1,1,1,
-1,0,0,0,0,0,0,1,1,0,1,1,1,0,0,
-0,0,0,0,0,0,1,1,1,0,1,1,0,1,1,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-		};
-		*/
-/*
-Urban[]={
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-0,1,0,1,1,1,1,1,1,1,1,1,1,1,0,
-0,1,0,1,0,0,0,0,0,0,0,0,0,1,0,
-0,1,0,1,0,1,1,1,1,1,1,1,0,1,0,
-0,1,0,1,0,1,0,0,0,0,0,1,0,1,0,
-0,1,0,1,0,1,1,1,1,1,0,1,0,1,0,
-1,1,0,1,0,0,0,0,0,0,0,1,0,1,0,
-0,1,0,1,1,1,1,1,1,1,1,1,0,1,0,
-0,1,0,0,0,0,0,0,0,0,0,0,0,1,0,
-0,1,1,1,1,1,1,1,1,1,1,1,1,1,0,
-0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-		};
-
-0.0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-0.0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-0.0,1,0,1,1,1,1,1,1,1,1,1,1,1,0,
-0.0,1,0,1,0,0,0,0,0,0,0,0,0,1,0,
-0.0,1,0,1,0,1,1,1,1,1,1,1,0,1,0,
-0.0,1,0,1,0,1,0,0,0,0,0,1,0,1,0,
-0.0,1,0,1,0,1,1,1,1,1,0,1,0,1,0,
-0.1,1,0,1,0,0,0,0,0,0,0,1,0,1,0,
-0.0,1,0,1,1,1,1,1,1,1,1,1,0,1,0,
-0.0,1,0,0,0,0,0,0,0,0,0,0,0,1,0,
-0.0,1,1,1,1,1,1,1,1,1,1,1,1,1,0,
-0.0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-
-*/
-
-//----------------------------
+// 	SECOND STAGE
+unsigned int *objects_stitching_nn(unsigned int *lm_nn,unsigned int *lm_cc,unsigned int nr,unsigned int nc,unsigned int ntile_nn,unsigned int ntile_cc,unsigned int *cross_parent);
+unsigned int *objects_stitching_ww(unsigned int *lm_ww,unsigned int *lm_cc,unsigned int nr,unsigned int nc,unsigned int ntile_ww,unsigned int ntile_cc,unsigned int *cross_parent);
+unsigned int *objects_stitching_cc(unsigned int *lm_cc,unsigned int nr,unsigned int nc,unsigned int ntile_cc,unsigned int *cross_parent,unsigned int *cross_parent_ii,unsigned int first_empty,unsigned int *PARENT,unsigned int maxcount);
+unsigned int *record_cross_equivalence(unsigned int **lm,unsigned int *cross_parent,unsigned int nr,unsigned int nc,unsigned int ntile_cc,int ntile_nn,int ntile_ww,unsigned int *PARENT,unsigned int mc);
+void union_cross_equivalence(unsigned int first_empty, unsigned int *cross_parent);
+void relabel_cross_equivalence(unsigned int first_empty, unsigned int *cross_parent);
+//---------------------------- FUNCTIONS PROTOTYPES
 
 unsigned int first_scan(	unsigned char	*urban,
-							unsigned int	nrows,
-							unsigned int	ncols,
-							unsigned int	*lab_mat,
-							unsigned int	*count,
-							unsigned int	*PARENT		)
+				unsigned int	nrows,
+				unsigned int	ncols,
+				unsigned int	*lab_mat,
+				unsigned int	*count,
+				unsigned int	*PARENT		)
 {
-	unsigned int r			= 0;
-	unsigned int c			= 0;
+	unsigned int r		= 0;
+	unsigned int c		= 0;
 	unsigned int maxcount	= 0;	
 	for(r=0; r<nrows; r++)
 	{
 		for(c=0; c<ncols; c++)
 		{
-
 			if(durban(c,r)==Vo) // if (r,c) is object pixel 
 			{
 				/*
@@ -190,24 +84,24 @@ unsigned int first_scan(	unsigned char	*urban,
 				 * 		{ ww, nw, nn, ne }
 				 */
 				// NORTH:
-				if(nn_pol(c,r)!=Vb) cc_pol(c,r) = nn_pol(c,r);
+				if(r>0 && nn_pol(c,r)!=Vb) cc_pol(c,r) = nn_pol(c,r);
 				
 				// WEST:
-				else if(ww_pol(c,r)!=Vb)
+				else if(c>0 && ww_pol(c,r)!=Vb)
 				{
 					cc_pol(c,r) = ww_pol(c,r);
 					if (ne_pol(c,r)!=Vb) record_equivalence( ne_pol(c,r), ww_pol(c,r), PARENT );
 				}
 				
 				// NORTH-WEST:
-				else if(nw_pol(c,r)!=Vb)
+				else if(r>0 && c>0 && nw_pol(c,r)!=Vb)
 				{
 					cc_pol(c,r) = nw_pol(c,r);
 					if (ne_pol(c,r)!=Vb) record_equivalence( ne_pol(c,r), nw_pol(c,r), PARENT );
 				}
 				
 				// NORTH-EAST:
-				else if(ne_pol(c,r)!=Vb) cc_pol(c,r) = ne_pol(c,r);
+				else if(r>0 && c<ncols && ne_pol(c,r)!=Vb) cc_pol(c,r) = ne_pol(c,r);
 				
 				//none object pixels in mask:
 				else cc_pol(c,r) = ++maxcount;
@@ -290,11 +184,98 @@ void read_mat(unsigned char *urban, unsigned int nrows, unsigned int ncols, char
 	fclose(fid);
 }
 
-/*
- * 		to be developed:
- */
-void record_cross_equivalence()
+unsigned int *objects_stitching_nn(
+		unsigned int *lm_nn,		// label matrix of northern tile in the mask
+		unsigned int *lm_cc,		// label matrix of target (=centre) tile in the mask
+		unsigned int nr,		// number of rows
+		unsigned int nc,		// number of columns
+		unsigned int ntile_nn,		// number of nn tile in the grid of tiles
+		unsigned int ntile_cc,		// number of cc tile in the grid of tiles
+		unsigned int *cross_parent	// pointer to the first row in cross_parent
+						)
 {
+	unsigned int c;
+	for(c=0;c<nc;c++)
+	{
+		if (lm_nn[nc*(nr-1)+c]!=0) // usare la lm_cc
+		{
+			*cross_parent++	= ntile_cc;		// parent tile number
+			*cross_parent++	= lm_cc[c];		// parent ID of parent tile number
+			*cross_parent++	= ntile_nn;		// root tile number
+			*cross_parent++	= lm_nn[nc*(nr-1)+c];	// root ID of root tile number
+		}
+	}
+	return cross_parent;
+}
+
+unsigned int *objects_stitching_ww(
+		unsigned int *lm_ww,		// label matrix of western tile in the mask
+		unsigned int *lm_cc,		// label matrix of target (=centre) tile in the mask
+		unsigned int nr,		// number of rows
+		unsigned int nc,		// number of columns
+		unsigned int ntile_ww,		// number of ww tile in the grid of tiles
+		unsigned int ntile_cc,		// number of cc tile in the grid of tiles
+		unsigned int *cross_parent	// pointer to the first row in cross_parent
+						)
+{
+	unsigned int r;
+	for(r=0;r<nr;r++)
+	{
+		if (lm_ww[nc*(r+1)-1]!=0)
+		{
+			*cross_parent++	= ntile_cc;		// parent tile number
+			*cross_parent++	= lm_cc[nc*r];		// parent ID of parent tile number
+			*cross_parent++	= ntile_ww;		// root tile number
+			*cross_parent++	= lm_ww[nc*(r+1)-1];	// root ID of root tile number
+		}
+	}
+	return cross_parent;
+}
+
+unsigned int *objects_stitching_cc(
+		unsigned int *lm_cc,		//label matrix of target (=centre) tile in the mask
+		unsigned int nr,		// number of rows
+		unsigned int nc,		// number of columns
+		unsigned int ntile_cc,		// number of cc tile in the grid of tiles
+		unsigned int *cross_parent,	// pointer to the first row in cross_parent
+		unsigned int *cross_parent_ii,	// pointer to the first element before stitching by {nn,ww}
+		unsigned int first_empty,	// the first empty row in cross_parent SCALAR
+		unsigned int *PARENT,		// the PARENT vector of target tile within tiles-mask
+		unsigned int maxcount		// number of labels in target tile stored in PARENT
+						)
+{
+	unsigned int i,j;
+	unsigned char found=0;
+	for(i=1;i<=maxcount;i++) // start from 1, because 0 is background
+	{
+		found = 0;
+		for(j=0;j<first_empty;j++) if( (cross_parent_ii[j*cross_cols+0]==ntile_cc) && (cross_parent_ii[j*cross_cols+1]==PARENT[i]) ) {found = 1; break;}
+
+		if (found==0) // then record current label as ROOT label! (i.e. elements {1,2} are equal to elements {3,4} of cross_parent
+		{
+			*cross_parent++	= ntile_cc;	// parent tile number
+			*cross_parent++	= PARENT[i];	// parent ID of parent tile number
+			*cross_parent++	= ntile_cc;	// root tile number
+			*cross_parent++	= PARENT[i];	// root ID of root tile number
+		}
+	}
+	return cross_parent;
+}
+unsigned int *record_cross_equivalence(
+		unsigned int **lm,
+		unsigned int *cross_parent,
+		unsigned int nr,
+		unsigned int nc,
+		unsigned int ntile_cc,
+		int ntile_nn,
+		int ntile_ww,
+		unsigned int *PARENT,
+		unsigned int mc)
+{
+	unsigned int *lm_cc;
+	unsigned int *lm_nn;
+	unsigned int *lm_ww;
+	lm_cc=lm[ntile_cc];
 	/*
 	 * For every tile, record equivalences in cross_parent in following order:
 	 *
@@ -306,114 +287,24 @@ void record_cross_equivalence()
 	 * (i.e. without jumping) set of labels for the whole image.
 	 *
 	 */
-
+	unsigned int *cross_parent_ii,first_empty;
+	cross_parent_ii = cross_parent;
 	// here I must call the objects_stintching_XX functions!
 	// (1)
 	//		objects_stitching_nn()
-
+	if( ntile_nn>=0 ) {
+		lm_nn=lm[ntile_nn];
+		cross_parent=objects_stitching_nn(lm_nn,lm_cc, nr, nc,ntile_nn, ntile_cc, cross_parent);
+	}
 	// (2)
-	//		objects_stitching_ww()
-
+	if( ntile_ww>=0 ) {
+		lm_ww=lm[ntile_ww];
+		cross_parent=objects_stitching_ww(lm_ww,lm_cc, nr, nc,ntile_ww, ntile_cc, cross_parent);
+	}
+	first_empty = cross_parent-cross_parent_ii;
 	// (3)
-	//		objects_stitching_cc()
-
-}
-
-void objects_stitching_ww(
-		unsigned int *lm_ww,		// label matrix of western tile in the mask
-		unsigned int *lm_cc,		// label matrix of target (=centre) tile in the mask
-		unsigned int nr,			// number of rows
-		unsigned int nc,			// number of columns
-		unsigned int ntile_ww,		// number of ww tile in the grid of tiles
-		unsigned int ntile_cc,		// number of cc tile in the grid of tiles
-		unsigned int *cross_parent,	// pointer to the first row in cross_parent
-		unsigned int *first_empty	// the first empty row in cross_parent SCALAR
-						)
-{
-	unsigned int r;
-	for(r=0;r<nr;r++)
-	{
-		if (lm_ww(nc*(r+1)-1)!=0)
-		{
-			cross_parent[&first_empty*cross_cols+0]	= ntile_cc;				// parent tile number
-			cross_parent[&first_empty*cross_cols+1]	= lm_cc(nc*r);			// parent ID of parent tile number
-			cross_parent[&first_empty*cross_cols+2]	= ntile_ww;				// root tile number
-			cross_parent[&first_empty*cross_cols+3]	= lm_ww(nc*(r+1)-1);	// root ID of root tile number
-			first_empty +=1;
-		}
-	}
-}
-void objects_stitching_nn(
-		unsigned int *lm_nn,		// label matrix of northern tile in the mask
-		unsigned int *lm_cc,		// label matrix of target (=centre) tile in the mask
-		unsigned int nr,			// number of rows
-		unsigned int nc,			// number of columns
-		unsigned int ntile_nn,		// number of nn tile in the grid of tiles
-		unsigned int ntile_cc,		// number of cc tile in the grid of tiles
-		unsigned int *cross_parent,	// pointer to the first row in cross_parent
-		unsigned int *first_empty	// the first empty row in cross_parent SCALAR
-						)
-{
-	unsigned int c;
-	for(c=0;c<nc;c++)
-	{
-		if (lm_nn(nc*(nr-1)+c)!=0)
-		{
-			cross_parent[&first_empty*cross_cols+0]	= ntile_cc;				// parent tile number
-			cross_parent[&first_empty*cross_cols+1]	= lm_cc(c);				// parent ID of parent tile number
-			cross_parent[&first_empty*cross_cols+2]	= ntile_nn;				// root tile number
-			cross_parent[&first_empty*cross_cols+3]	= lm_nn(nc*(nr-1)+c);	// root ID of root tile number
-			first_empty +=1;
-		}
-	}
-}
-void objects_stitching_nw(
-		unsigned int *lm_nw,		// label matrix of north-western tile in the mask
-		unsigned int *lm_cc,		// label matrix of target (=centre) tile in the mask
-		unsigned int nr,			// number of rows
-		unsigned int nc,			// number of columns
-		unsigned int ntile_nw,		// number of nw tile in the grid of tiles
-		unsigned int ntile_cc,		// number of cc tile in the grid of tiles
-		unsigned int *cross_parent,	// pointer to the first row in cross_parent
-		unsigned int *first_empty	// the first empty row in cross_parent SCALAR
-						)
-{
-	if (lm_nw(nc*nr-1)!=0)
-	{
-		cross_parent[&first_empty*cross_cols+0]	= ntile_cc;				// parent tile number
-		cross_parent[&first_empty*cross_cols+1]	= lm_cc(0);				// parent ID of parent tile number
-		cross_parent[&first_empty*cross_cols+2]	= ntile_nw;				// root tile number
-		cross_parent[&first_empty*cross_cols+3]	= lm_nw(nc*nr-1);		// root ID of root tile number
-		first_empty +=1;
-	}
-}
-void objects_stitching_cc(
-		unsigned int *lm_cc,		//label matrix of target (=centre) tile in the mask
-		unsigned int nr,			// number of rows
-		unsigned int nc,			// number of columns
-		unsigned int ntile_cc,		// number of cc tile in the grid of tiles
-		unsigned int *cross_parent,	// pointer to the first row in cross_parent
-		unsigned int *first_empty,	// the first empty row in cross_parent SCALAR
-		unsigned int *PARENT,		// the PARENT vector of target tile within tiles-mask
-		unsigned int maxcount		// number of labels in target tile stored in PARENT
-						)
-{
-	unsigned int i,j;
-	unsigned char found=0;
-	for(i=1;i<maxcount;i++) // start from 1, because 0 is background
-	{
-		found = 0;
-		for(j=0;j<first_empty;j++) if( (cross_parent[j*cross_cols+0]==ntile_cc) && (cross_parent[j*cross_cols+1]==PARENT[i]) ) found = 1; break;
-
-		if (found==0) // then record current label as ROOT label! (i.e. elements {1,2} are equal to elements {3,4} of cross_parent
-		{
-			cross_parent[&first_empty*cross_cols+0]	= ntile_cc;		// parent tile number
-			cross_parent[&first_empty*cross_cols+1]	= PARENT[i];	// parent ID of parent tile number
-			cross_parent[&first_empty*cross_cols+2]	= ntile_cc;		// root tile number
-			cross_parent[&first_empty*cross_cols+3]	= PARENT[i];	// root ID of root tile number
-			first_empty +=1;
-		}
-	}
+	cross_parent=objects_stitching_cc(lm_cc,nr,nc,ntile_cc,cross_parent, cross_parent_ii, first_empty, PARENT,mc);
+	return cross_parent;
 }
 
 void union_cross_equivalence(unsigned int first_empty, unsigned int *cross_parent)
@@ -460,47 +351,64 @@ void relabel_cross_equivalence(unsigned int first_empty, unsigned int *cross_par
 int main()
 {
 	// DECLARATION:
-	unsigned int nTiles = 2,iTile;
-	unsigned int * (pol[nTiles]);
+	unsigned int nTiles,iTile;
+	unsigned int ntilesX=2,ntilesY=2;
+	nTiles = ntilesX*ntilesY;
+	unsigned int * (lab_mat[nTiles]);
 	unsigned int * (cont[nTiles]);
 	unsigned int i,	mc[nTiles];
 	unsigned int *(PARENT[nTiles]);
-	unsigned int dc		= 6;
-	unsigned int dr		= 5;
-	unsigned int nID	= dc*dr/4 +1;
+	unsigned int nc		= 6;
+	unsigned int nr		= 5;
+	unsigned int nID	= nc*nr/4 +1;
 	unsigned char *(urban[nTiles]);
 	char s[255];
 
 	for(iTile = 0;iTile<nTiles;iTile++)
 	{
 		// INITIALIZATION:
-		pol[iTile]		= (unsigned int*)calloc((dc+1)*(dr+1),sizeof(unsigned int));// la pol deve avere 1^ riga e colonna di zeri in più per consentire loop (i,j):
+		lab_mat[iTile]	= (unsigned int*)calloc((nc)*(nr),sizeof(unsigned int));// la lab_mat deve avere 1^ riga e colonna di zeri in più per consentire loop (i,j):
 		cont[iTile]		= (unsigned int*)malloc(nID*sizeof(unsigned int));
 		PARENT[iTile]	= (unsigned int*)calloc(nID,sizeof(unsigned int));
-		urban[iTile] 	= (unsigned char*)calloc((dc)*(dr),sizeof(unsigned int));
+		urban[iTile] 	= (unsigned char*)calloc((nc)*(nr),sizeof(unsigned int));
 
 		// READ
 		sprintf(s,"/home/giuliano/git/soil-sealing/data/%c.txt",65+iTile);
 		printf("here!\n");
 		puts(s);
-		read_mat(urban[iTile], dr, dc, s);
+		read_mat(urban[iTile], nr, nc, s);
 
 		// KERNELs INVOCATION:
-		mc[iTile]		= first_scan(urban[iTile],dr,dc,pol[iTile],cont[iTile],PARENT[iTile]);	//	(1) 1st SCAN
+		mc[iTile]		= first_scan(urban[iTile],nr,nc,lab_mat[iTile],cont[iTile],PARENT[iTile]);	//	(1) 1st SCAN
 		union_equivalence(		mc[iTile], PARENT[iTile]);				//	(2) UNION
 		relabel_equivalence(	mc[iTile], PARENT[iTile]);				//	(3) RELABEL
 		// ??												//	(?)	COMPACT ==> no gaps in
-		second_scan(pol[iTile],dr,dc, PARENT[iTile]);						//	(4) 2nd SCAN
+		second_scan(lab_mat[iTile],nr,nc, PARENT[iTile]);						//	(4) 2nd SCAN
 
 	}
 	/*
 	// PRINTS:
-	print_mat(	urban,	dr,		dc,		"Binary Raster"							);
-	print_mat(	pol,	dr+1,	dc+1, 	"CCL (Connected-Components Labeling)"	);
+	print_mat(	urban,	nr,		nc,		"Binary Raster"							);
+	print_mat(	lab_mat,	nr+1,	nc+1, 	"CCL (Connected-Components Labeling)"	);
 	printf("Indexes:\n"); for(i=0;i<=mc;i++) {printf("%3.0d ",i);};  printf("\n");
 	print_vec(	PARENT,	mc+1,			"Labels"								);
 	print_vec(	cont,	mc+1,			"Counts"								);
 */
+
+	unsigned int *cross_parent,*first_pos_cp,dim=0,rr,cc;
+	int nn,ww;
+	for(iTile = 0;iTile<nTiles;iTile++) 	{	dim += mc[iTile]; 	}
+	cross_parent=calloc(dim,sizeof(int));
+	first_pos_cp=cross_parent;
+
+	//kernel 2:
+	for(iTile = 0;iTile<nTiles;iTile++)
+	{
+		rr = iTile / ntilesX; 		// CURRENT ROW (quoziente intero)
+		nn=iTile - ntilesX;			// tile index of nn
+		ww=((rr*ntilesX)==iTile)?-1:iTile-1;	// tile index of ww
+		cross_parent=record_cross_equivalence(lab_mat,cross_parent,nr,nc,iTile, nn, ww, PARENT[iTile],mc[iTile]);
+	}
 
 
 
@@ -509,7 +417,7 @@ int main()
 	for(iTile = 0;iTile<nTiles;iTile++)
 	{
 		free(cont[iTile]);
-		free(pol[iTile]);
+		free(lab_mat[iTile]);
 		free(PARENT[iTile]);
 		free(urban[iTile]);
 	}
